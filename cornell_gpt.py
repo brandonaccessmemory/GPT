@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-
-
+from transformers import GPT2Tokenizer
 from torch.nn import functional as F
 
 # # huge hyperparameters ( ran out of memory )
@@ -19,55 +18,39 @@ from torch.nn import functional as F
 # # ------------
 
 #mid hyperparameters
-# batch_size = 64 # how many independent sequences will we process in parallel?
-# block_size = 256 # what is the maximum context length for predictions?
+batch_size = 64 # how many independent sequences will we process in parallel?
+block_size = 128 # what is the maximum context length for predictions?
+max_iters = 10000
+eval_interval = 500
+learning_rate = 1e-4
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+eval_iters = 200
+n_embd = 384
+n_head = 12
+n_layer = 12
+dropout = 0.6
+# ------------
+
+# #small hyperparameters
+# batch_size = 32 # how many independent sequences will we process in parallel?
+# block_size = 128 # what is the maximum context length for predictions?
 # max_iters = 5000
 # eval_interval = 500
 # learning_rate = 3e-4
 # device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # eval_iters = 200
 # n_embd = 384
-# n_head = 6
-# n_layer = 6
-# dropout = 0.6
-# eos_token = "<EOS> "
-# ------------
-
-# #small hyperparameters
-batch_size = 32 # how many independent sequences will we process in parallel?
-block_size = 20 # what is the maximum context length for predictions?
-max_iters = 5000
-eval_interval = 500
-learning_rate = 3e-4
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 200
-n_embd = 384
-n_head = 8
-n_layer = 6
-dropout = 0.2
+# n_head = 8
+# n_layer = 8
+# dropout = 0.5
 # #------------
-vocab_size = 50257
-# with open('./datasets/cleaned_data.txt', 'r', encoding = 'utf-8') as f: 
-#     text = f.read()
 
-# with open('./datasets/vocab.txt', 'r', encoding = 'utf-8') as f:
-#     vocab = f.read().split('\n')
-#     # 7079
-#     vocab_size = len(vocab)
-#     print(vocab_size)
-
-# # create a mapping from words to integers
-# word_to_idx = { word:idx for idx,word in enumerate(vocab) }
-# idx_to_word = { idx:word for idx,word in enumerate(vocab) }
-# # 0 acts as the UNKOWN token
-# encode = lambda s: [word_to_idx.get(c, 0) for c in s] # encoder: take a string, output a list of integers
-# decode = lambda l: ' '.join([idx_to_word.get(i, '<UNK>') for i in l]) # decoder: take a list of integers, output a string
-
-# # Train and test splits
-# data = torch.tensor(encode(text.split()), dtype=torch.long)
-# n = int(0.9*len(data)) # first 90% will be train, rest validation
-# train_data = data[:n]
-# val_data = data[n:]
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+tokenizer.add_special_tokens({  "pad_token" : "<pad>",
+                                "bos_token" : "<sos>",
+                                "eos_token" : "<eos>"})
+tokenizer.add_tokens(["<context>", "<question>", "<personality>"])
+vocab_size = len(tokenizer)
 
 # # data loading
 # def get_batch(split):
@@ -98,13 +81,16 @@ def get_batch(split):
 def estimate_loss():
     out = {}
     model.eval()
+    # calculate loss for training set and validation set
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
             # forward pass
             logits, loss = model(X, Y)
+            # get lossess for each iteration
             losses[k] = loss.item()
+        # average loss for eval_iters iteration
         out[split] = losses.mean()
     model.train()
     return out
@@ -198,7 +184,7 @@ class GPTLanguageModel(nn.Module):
         # each token directly reads off the logits for the next token from a lookup table
         # +1 due to accomodate UNK tokens
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
-        self.position_embedding_table = nn.Embedding(block_size-1, n_embd)
+        self.position_embedding_table = nn.Embedding(block_size, n_embd)
         self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd) # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
@@ -233,6 +219,7 @@ class GPTLanguageModel(nn.Module):
             B, T, C = logits.shape
             logits = logits.view(B*T, C)
             targets = targets.view(B*T)
+            # calculate loss using cross_entropy function
             loss = F.cross_entropy(logits, targets)
 
         return logits, loss
@@ -243,20 +230,26 @@ class GPTLanguageModel(nn.Module):
             # crop idx to the last block_size tokens
             idx_cond = idx[:, -block_size:]
             idx_cond = idx_cond.to(device)
-            print("Generated Token:", idx_cond)
+        
             # get the predictions
             logits, loss = self(idx_cond)
-            #print("precropped", logits)
+
             # focus only on the last time step
             logits = logits[:, -1, :] # becomes (B, C)
-            #print("cropped", logits)
+
             # apply softmax to get probabilities
             probs = F.softmax(logits, dim=-1) # (B, C)
-            #print("probs", probs)
+
             # sample from the distribution, output is different each time 
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
+
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
+
+            if tokenizer.decode(idx_next[0]) == tokenizer.eos_token:
+                print("Finish generating sentence")
+                break
+
         return idx
 
 # model = GPTLanguageModel()
@@ -301,26 +294,19 @@ if __name__ == '__main__':
     print(f"Number of Layers: {n_layer}")
     print(f"Dropout: {dropout} \n")
 
-    with open('./datasets/cleaned_data.txt', 'r', encoding = 'utf-8') as f: 
+    with open('./datasets/persona_chat.txt', 'r', encoding = 'utf-8') as f: 
         text = f.read().split('\n')
 
     sentence = [] 
     for line in text: 
         sentence.append(line)
 
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = '<PAD>'
-    tokenizer.eos_token = '<EOS>'
     # Train and test splits
-    data = tokenizer(sentence, padding=True, truncation=True, max_length=20, return_tensors="pt")
-    print("Tokenized Data", data[:5])
+    data = tokenizer(sentence, padding=True, truncation=True, max_length=256, return_tensors="pt")
     n = int(0.8*len(data['input_ids'])) # first 80% will be train, rest validation
     train_data = data['input_ids'][:n]
     val_data = data['input_ids'][n:]
-    vocab_size = tokenizer.vocab_size
     print("Vocab Size", vocab_size)
-    print("VaL_DATA", val_data)
-    print("Data", len(data['input_ids']))
 
 
     model = GPTLanguageModel()
@@ -349,17 +335,18 @@ if __name__ == '__main__':
         optimizer.step()
 
     # Save the model
-    torch.save(m.state_dict(), './models/cornell_gpt.pth')
+    torch.save(m.state_dict(), './models/edition2.pth')
 
-    print("\nInference")
-    input = "hello how are you <EOS>"
-    hi = [] 
-    hi.append(input)
-    data_ = tokenizer(hi, padding=True, truncation=True, max_length=20, return_tensors="pt")
-    print(data_)
-    # data_ = data_['input_ids'].reshape(len(input.split()),1)
-    # print(decode(m.generate(data,max_new_tokens=100)[0].tolist()))
-    print(tokenizer.decode(m.generate(data_['input_ids'].to(device),max_new_tokens=10)[0]))
+    # print("\nInference")
+    # input = clean_text("I used my artistic skills to teach children how to create beautiful and creative works of art. I don't have a specific exercise routine, but I try to get some activity in most days of the week. i m also a fulltime student studying radiology at local college. i ve never been to the beach. I play in a band that my parents don't know about.")
+    # input = "<personality>enfp<personality><context>" + input + "<context><question>how are you doing today<question>"
+    # hi = [] 
+    # hi.append(input)
+    # data_ = tokenizer(hi, padding=True, truncation=True, max_length=128, return_tensors="pt")
+    # print("Inference Data", data_)
+    # # data_ = data_['input_ids'].reshape(len(input.split()),1)
+    # # print(decode(m.generate(data,max_new_tokens=100)[0].tolist()))
+    # print(tokenizer.decode(m.generate(data_['input_ids'].to(device),max_new_tokens=30)[0]))
 
 # Load the model
 # model = YourTransformerModelClass()
@@ -368,4 +355,4 @@ if __name__ == '__main__':
 # nltk, spacy for tokenizers 
 # online training, ongoing training datasets for LLM 
 # personality filter at the end of the output of the chatbot, tune hyperparameters more or more layers 
-# 
+# <personality> <personality><context> <context><question> <question><sos> <eos> 
