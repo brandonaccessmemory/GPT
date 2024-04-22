@@ -1,0 +1,36 @@
+Hyperparameters for this model: 
+Batch Size: 64
+Block Size: 128
+Max Iterations: 10000
+Evaluation Interval: 500
+Learning Rate: 0.00015
+Device: cuda
+Evaluation Iterations: 200
+Number of Embeddings: 384
+Number of Heads: 12
+Number of Layers: 12
+Dropout: 0.6 
+
+Vocab Size 50263
+59.981911 M parameters
+step 0: train loss 10.7581, val loss 10.7577
+step 500: train loss 2.5270, val loss 2.5237
+step 1000: train loss 2.1209, val loss 2.1324
+step 1500: train loss 1.7721, val loss 1.8097
+step 2000: train loss 1.5144, val loss 1.5708
+step 2500: train loss 1.3162, val loss 1.3831
+step 3000: train loss 1.1547, val loss 1.2531
+step 3500: train loss 1.0275, val loss 1.1294
+step 4000: train loss 0.9344, val loss 1.0484
+step 4500: train loss 0.8529, val loss 0.9577
+step 5000: train loss 0.7978, val loss 0.9036
+step 5500: train loss 0.7408, val loss 0.8420
+step 6000: train loss 0.6978, val loss 0.7966
+step 6500: train loss 0.6713, val loss 0.7673
+step 7000: train loss 0.6412, val loss 0.7397
+step 7500: train loss 0.6224, val loss 0.7125
+step 8000: train loss 0.6098, val loss 0.7049
+step 8500: train loss 0.5844, val loss 0.6732
+step 9000: train loss 0.5723, val loss 0.6603
+step 9500: train loss 0.5588, val loss 0.6479
+step 9999: train loss 0.5512, val loss 0.6363
